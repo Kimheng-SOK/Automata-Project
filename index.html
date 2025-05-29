@@ -1,0 +1,71 @@
+    <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Finite Automata Manager</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Finite Automata Manager</h1>
+    </header>
+
+    <nav>
+        <button id="designFA">Design FA</button>
+        <button id="testDeterministic">Test Deterministic/NFA</button>
+        <button id="testString">Test String Acceptance</button>
+        <button id="nfaToDfa">NFA to DFA Conversion</button>
+        <button id="minimizeDFA">Minimize DFA</button>
+        <button id="manageFAs">Manage Saved FAs</button>
+    </nav>
+
+    <main>
+        <section id="designFASection" class="hidden">
+            <h2>Design Finite Automaton</h2>
+            <textarea id="faDefinition" placeholder="Enter FA definition (e.g., states:q0,q1; alphabet:0,1; transitions:q0,0,q0; start:q0; final:q1)"></textarea>
+            <button id="createFA">Create FA</button>
+            <div id="faVisualization"></div>
+        </section>
+
+        <section id="testDeterministicSection" class="hidden">
+            <h2>Test Deterministic/Non-Deterministic</h2>
+            <p>Load an FA first or design one to test its type.</p>
+            <button id="checkDeterminism">Check Type</button>
+            <p id="determinismResult"></p>
+        </section>
+
+        <section id="testStringSection" class="hidden">
+            <h2>Test String Acceptance</h2>
+            <p>Load an FA first or design one to test a string.</p>
+            <input type="text" id="stringToTest" placeholder="Enter string to test">
+            <button id="testStringAcceptance">Test String</button>
+            <p id="stringAcceptanceResult"></p>
+        </section>
+
+        <section id="nfaToDfaSection" class="hidden">
+            <h2>NFA to DFA Conversion</h2>
+            <p>Load an NFA first or design one to convert it.</p>
+            <button id="convertNfaToDfa">Convert</button>
+            <div id="dfaResultVisualization"></div>
+        </section>
+
+        <section id="minimizeDFAReaction" class="hidden">
+            <h2>Minimize DFA</h2>
+            <p>Load a DFA first or convert an NFA to DFA to minimize it.</p>
+            <button id="minimizeDFAButton">Minimize</button>
+            <div id="minimizedDFAVisualization"></div>
+        </section>
+
+        <section id="manageFAsSection" class="hidden">
+            <h2>Manage Saved FAs</h2>
+            <ul id="savedFAList"></ul>
+            <button id="loadFA">Load Selected FA</button>
+            <button id="editFA">Edit Selected FA</button>
+            <button id="deleteFA">Delete Selected FA</button>
+        </section>
+    </main>
+
+    <script src="script.js"></script>
+</body>
+</html>
