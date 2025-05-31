@@ -1,0 +1,153 @@
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Enhanced Finite Automata Designer</title>
+        <link rel="stylesheet" href="style.css">
+    </head>
+    <body>
+        <div class="export-notification" id="export-notification">
+            Automata exported successfully!
+        </div>
+        
+        <div class="container">
+            <header>
+                <h1>Enhanced Finite Automata Designer</h1>
+                <p class="subtitle">Advanced visualization with bidirectional transitions and export</p>
+            </header>
+
+            <div class="main-content">
+                <div class="sidebar">
+                    <div class="panel">
+                        <h2>Saved Automata</h2>
+                        <ul id="saved-automata"></ul>
+                        <button id="new-automata">
+                            <i>+</i> New Automata
+                        </button>
+                        
+                        <div class="management-section">
+                            <h3>Automata Management</h3>
+                            <div class="management-buttons">
+                                <button id="export-automata">Export Current</button>
+                                <button id="import-automata">Import Automata</button>
+                                <button id="delete-all-automata" class="delete">Delete All</button>
+                            </div>
+                            <textarea id="export-data" style="display: none; width: 100%; height: 100px; margin-top: 10px;"></textarea>
+                            <input type="file" id="import-file" style="display: none;" accept=".json">
+                        </div>
+                    </div>
+                    
+                    <div class="instructions">
+                        <h3>How to Use:</h3>
+                        <ul>
+                            <li><b>Add State:</b> Click the button, then click on canvas</li>
+                            <li><b>Add Transition:</b> Enable transition mode, then click two states</li>
+                            <li><b>Set Initial/Final:</b> Select a state and click the button</li>
+                            <li><b>Delete Element:</b> Select a state and click delete, or double-click a transition</li>
+                            <li><b>Move States:</b> Drag and drop states to reposition</li>
+                            <li><b>Edit Symbols:</b> Click on a transition to edit its symbols</li>
+                            <li><b>Epsilon (ε):</b> Use the epsilon button in transition editor</li>
+                            <li><b>Bidirectional:</b> Opposing transitions automatically curve</li>
+                            <li><b>Export:</b> Automatically saves to your Downloads folder</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="workspace">
+                    <div class="panel">
+                        <h2>Automata Designer</h2>
+                        <div class="canvas-container">
+                            <canvas id="automata-canvas" width="700" height="400"></canvas>
+                        </div>
+                        <div class="controls">
+                            <button id="add-state">
+                                <i>⦿</i> Add State
+                            </button>
+                            <button id="add-transition">
+                                <i>⇄</i> Add Transition
+                            </button>
+                            <button id="set-initial">
+                                <i>→</i> Set Initial State
+                            </button>
+                            <button id="set-final">
+                                <i>◎</i> Set Final State
+                            </button>
+                            <button id="delete-element" class="delete">
+                                <i>🗑</i> Delete Element
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <h2>Automata Tests</h2>
+                        <div class="test-section">
+                            <div class="input-group">
+                                <input type="text" id="test-string" placeholder="Enter string to test">
+                                <button id="test-acceptance">Test Acceptance</button>
+                            </div>
+                            <div id="test-result" class="result"></div>
+                        </div>
+                        
+                        <div class="test-section">
+                            <button id="check-deterministic">Check Determinism</button>
+                            <div id="deterministic-result" class="result"></div>
+                        </div>
+                        
+                        <div class="test-section">
+                            <div class="input-group">
+                                <button id="convert-to-dfa">Convert NFA to DFA</button>
+                                <button id="minimize-dfa">Minimize DFA</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <h2>Automata Properties</h2>
+                        <div id="automata-properties" class="property-grid"></div>
+                        
+                        <div class="save-section">
+                            <div class="input-group">
+                                <input type="text" id="automata-name" placeholder="Enter automata name">
+                                <button id="save-automata">Save Automata</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="status-bar">
+                <div>Status: <span id="status-message">Ready</span></div>
+                <div>States: <span id="state-count">0</span> | Transitions: <span id="transition-count">0</span></div>
+            </div>
+        </div>
+        
+        <!-- Transition Editor Modal -->
+        <div id="transition-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Edit Transition Symbols</h3>
+                    <span class="close-btn">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <p>Current symbols:</p>
+                    <div id="symbol-list" class="symbol-list"></div>
+                    
+                    <div class="symbol-input">
+                        <input type="text" id="new-symbol" placeholder="Enter symbol (e.g., a, b, 0, 1)" maxlength="1">
+                        <button id="add-symbol">Add Symbol</button>
+                    </div>
+                    
+                    <div style="margin-top: 20px;">
+                        <button id="add-epsilon" class="epsilon-btn">Add Epsilon (ε)</button>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="cancel-edit">Cancel</button>
+                    <button id="save-transition">Save Changes</button>
+                </div>
+            </div>
+        </div>
+        <script src="script.js"></script>
+    </body>
+    </html>
