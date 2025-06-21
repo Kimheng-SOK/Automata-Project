@@ -2,14 +2,46 @@
     <html lang="en">
     <head>
         <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.8, maximum-scale=1.0">
         <title>Enhanced Finite Automata Designer</title>
-        <link rel="stylesheet" href="style.css">
+        <link rel="stylesheet" href="./css/style.css">
+        <script type="module" src="./js/models.js" defer></script>
+        <script type="module" src="./js/renderer.js" defer></script>
+        <script type="module" src="./js/storage.js" defer></script>
+        <script type="module" src="./js/main.js" defer></script>
     </head>
     <body>
         <div class="export-notification" id="export-notification">
             Automata exported successfully!
         </div>
+
+        <script>
+            // Ensure canvas fits container and resizes properly
+            window.addEventListener('load', function() {
+                const resizeCanvas = function() {
+                    const canvas = document.getElementById('automata-canvas');
+                    if (!canvas) return;
+
+                    const container = canvas.parentElement;
+                    if (container) {
+                        // Get container dimensions
+                        const rect = container.getBoundingClientRect();
+
+                        // Set canvas dimensions to match container
+                        canvas.width = Math.max(rect.width - 2, 600);
+                        canvas.height = Math.max(rect.height - 2, 350);
+                    }
+                };
+
+                // Initial resize
+                resizeCanvas();
+
+                // Listen for window resize events
+                window.addEventListener('resize', function() {
+                    setTimeout(resizeCanvas, 100);
+                });
+            });
+        </script>
         
         <div class="container">
             <header>
@@ -98,8 +130,10 @@
                             <div class="input-group">
                                 <button id="convert-to-dfa">Convert NFA to DFA</button>
                                 <button id="minimize-dfa">Minimize DFA</button>
+                                <button id="convert-to-regex">Convert to Regex</button>
                             </div>
                         </div>
+                        <div id="regex-result" class="result"></div>
                     </div>
 
                     <div class="panel">
@@ -120,14 +154,48 @@
                 <div>Status: <span id="status-message">Ready</span></div>
                 <div>States: <span id="state-count">0</span> | Transitions: <span id="transition-count">0</span></div>
             </div>
+
+            <!-- Scroll to top button -->
+            <button id="scroll-to-top" class="scroll-top-btn" title="Scroll to top">
+                ↑
+            </button>
+
+            <script>
+                // Scroll to top button functionality
+                document.addEventListener('DOMContentLoaded', function() {
+                    const scrollBtn = document.getElementById('scroll-to-top');
+
+                    if (scrollBtn) {
+                        // Show button when user scrolls down
+                        window.addEventListener('scroll', function() {
+                            // Show button after scrolling more than 20% of viewport height
+                            const scrollThreshold = Math.max(300, window.innerHeight * 0.2);
+
+                            if (document.body.scrollTop > scrollThreshold || document.documentElement.scrollTop > scrollThreshold) {
+                                scrollBtn.style.display = 'flex';
+                            } else {
+                                scrollBtn.style.display = 'none';
+                            }
+                        });
+
+                        // Scroll to top when button is clicked
+                        scrollBtn.addEventListener('click', function() {
+                            window.scrollTo({
+                                top: 0,
+                                behavior: 'smooth'
+                            });
+                        });
+                    }
+                });
+            </script>
         </div>
         
         <!-- Transition Editor Modal -->
         <div id="transition-modal" class="modal">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h3>Edit Transition Symbols</h3>
                     <span class="close-btn">&times;</span>
+                    <h3 class="modal-title">Edit Transition Symbols</h3>
                 </div>
                 <div class="modal-body">
                     <p>Current symbols:</p>
@@ -148,6 +216,5 @@
                 </div>
             </div>
         </div>
-        <script src="script.js"></script>
     </body>
     </html>
