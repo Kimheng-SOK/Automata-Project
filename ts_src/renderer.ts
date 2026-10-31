@@ -10,6 +10,9 @@ export class AutomataRenderer {
     private automata: FiniteAutomaton;
     private selectedState: number | null = null;
 
+    private static readonly CURVE_OFFSET = 40;   // control-point distance for bidirectional curves
+    private static readonly HIT_THRESHOLD = 10;  // px: how close a click must be to a transition
+
     constructor(canvas: HTMLCanvasElement, automata: FiniteAutomaton) {
         const context = canvas.getContext('2d');
         if (!context) throw new Error('Could not get canvas context');
@@ -182,45 +185,45 @@ export class AutomataRenderer {
     }
 
     private drawBidirectionalArrow(fromState: State, toState: State, transitions: Transition[]): void {
-        const dx = toState.x - fromState.x;
-        const dy = toState.y - fromState.y;
-        const angle = Math.atan2(dy, dx);
+        // Each direction is drawn once (drawTransitions calls this for both from->to and to->from)
+        const control = this.getCurveControl(fromState, toState);
+        this.drawCurvedArrow(fromState, toState, transitions, control.x, control.y);
+    }
 
-        // Midpoint
-        const midX = (fromState.x + toState.x) / 2;
-        const midY = (fromState.y + toState.y) / 2;
+    // Control point of the curve used for from -> to when the reverse edge also exists.
+    // The two directions bend to opposite sides of the straight line between the states.
+    private getCurveControl(from: State, to: State): Point {
+        const angle = Math.atan2(to.y - from.y, to.x - from.x);
+        const perp = angle + Math.PI / 2;
+        return {
+            x: (from.x + to.x) / 2 + Math.cos(perp) * AutomataRenderer.CURVE_OFFSET,
+            y: (from.y + to.y) / 2 + Math.sin(perp) * AutomataRenderer.CURVE_OFFSET
+        };
+    }
 
-        // Calculate distinct curve offsets
-        const perpAngle = angle + Math.PI/2;
-        const offset = 40;
-
-        // Draw the "forward" curve (above the line)
-        const controlX1 = midX + Math.cos(perpAngle) * offset;
-        const controlY1 = midY + Math.sin(perpAngle) * offset;
-        this.drawCurvedArrow(fromState, toState, transitions, controlX1, controlY1);
-
-        // Draw the "reverse" curve (below the line)
-        const controlX2 = midX - Math.cos(perpAngle) * offset;
-        const controlY2 = midY - Math.sin(perpAngle) * offset;
-
-        // For reverse transitions, we need to find the reverse transitions
-        const reverseTransitions = this.automata.transitions.filter(
-            t => t.from === toState.id && t.to === fromState.id
-        );
-
-        if (reverseTransitions.length > 0) {
-            this.drawCurvedArrow(toState, fromState, reverseTransitions, controlX2, controlY2);
-        }
+    private getCurveEndpoints(from: State, to: State, control: Point): { start: Point; end: Point; endAngle: number } {
+        const angleToControl = Math.atan2(control.y - from.y, control.x - from.x);
+        const angleFromControl = Math.atan2(to.y - control.y, to.x - control.x);
+        return {
+            start: {
+                x: from.x + Math.cos(angleToControl) * from.radius,
+                y: from.y + Math.sin(angleToControl) * from.radius
+            },
+            end: {
+                x: to.x - Math.cos(angleFromControl) * to.radius,
+                y: to.y - Math.sin(angleFromControl) * to.radius
+            },
+            endAngle: angleFromControl
+        };
     }
 
     private drawCurvedArrow(fromState: State, toState: State, transitions: Transition[], controlX: number, controlY: number): void {
-        const angleToControl = Math.atan2(controlY - fromState.y, controlX - fromState.x);
-        const startX = fromState.x + Math.cos(angleToControl) * fromState.radius;
-        const startY = fromState.y + Math.sin(angleToControl) * fromState.radius;
-
-        const angleFromControl = Math.atan2(toState.y - controlY, toState.x - controlX);
-        const endX = toState.x - Math.cos(angleFromControl) * toState.radius;
-        const endY = toState.y - Math.sin(angleFromControl) * toState.radius;
+        const { start, end, endAngle } = this.getCurveEndpoints(fromState, toState, { x: controlX, y: controlY });
+        const startX = start.x;
+        const startY = start.y;
+        const endX = end.x;
+        const endY = end.y;
+        const angleFromControl = endAngle;
 
         // Draw quadratic curve
         this.ctx.beginPath();
@@ -300,46 +303,90 @@ export class AutomataRenderer {
         }) || null;
     }
 
+    // Returns the transition closest to (x, y), or null if nothing is within HIT_THRESHOLD.
+    // Hit areas follow the real drawn shapes (curves for bidirectional pairs, the loop for
+    // self-transitions) and also include the symbol label, so clicking the label works too.
     findTransitionAtPosition(x: number, y: number): Transition | null {
-        const threshold = 5;
+        let best: Transition | null = null;
+        let bestDistance = AutomataRenderer.HIT_THRESHOLD;
 
         for (const trans of this.automata.transitions) {
             const fromState = this.automata.getStateById(trans.from);
             const toState = this.automata.getStateById(trans.to);
-
             if (!fromState || !toState) continue;
 
-            if (fromState.id === toState.id) {
-                // Self-transition (loop)
-                const centerX = fromState.x;
-                const centerY = fromState.y - 30;
-                const radius = 25;
-                const distance = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
-
-                if (Math.abs(distance - radius) < threshold) {
-                    return trans;
-                }
-            } else {
-                // Normal transition
-                const angle = Math.atan2(toState.y - fromState.y, toState.x - fromState.x);
-                const adjustedFromX = fromState.x + Math.cos(angle) * fromState.radius;
-                const adjustedFromY = fromState.y + Math.sin(angle) * fromState.radius;
-                const adjustedToX = toState.x - Math.cos(angle) * toState.radius;
-                const adjustedToY = toState.y - Math.sin(angle) * toState.radius;
-
-                // Distance from point to line segment
-                const distance = this.distanceToLine(
-                    x, y,
-                    adjustedFromX, adjustedFromY,
-                    adjustedToX, adjustedToY
-                );
-
-                if (distance < threshold) {
-                    return trans;
-                }
+            const distance = this.distanceToTransition(x, y, trans, fromState, toState);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = trans;
             }
         }
-        return null;
+        return best;
+    }
+
+    private distanceToTransition(x: number, y: number, trans: Transition, from: State, to: State): number {
+        const symbols = this.automata.transitions
+            .filter(t => t.from === trans.from && t.to === trans.to)
+            .map(t => t.symbol)
+            .join(',');
+
+        let pathDistance: number;
+        let labelAnchor: Point; // where drawX() calls fillText for the label
+
+        if (from.id === to.id) {
+            // Self-loop (see drawSelfLoop): circle of radius 25 centred 40px above the state
+            const centerX = from.x;
+            const centerY = from.y - 40;
+            pathDistance = Math.abs(Math.hypot(x - centerX, y - centerY) - 25);
+            labelAnchor = { x: centerX, y: centerY - 50 };
+        } else if (this.automata.transitions.some(t => t.from === to.id && t.to === from.id)) {
+            // Bidirectional pair (see drawCurvedArrow): follow the actual quadratic curve
+            const control = this.getCurveControl(from, to);
+            const { start, end } = this.getCurveEndpoints(from, to, control);
+            pathDistance = this.distanceToPolyline(x, y, this.sampleCurve(start, control, end));
+            labelAnchor = control;
+        } else {
+            // Straight arrow (see drawStraightArrow)
+            const angle = Math.atan2(to.y - from.y, to.x - from.x);
+            const x1 = from.x + Math.cos(angle) * from.radius;
+            const y1 = from.y + Math.sin(angle) * from.radius;
+            const x2 = to.x - Math.cos(angle) * to.radius;
+            const y2 = to.y - Math.sin(angle) * to.radius;
+            pathDistance = this.distanceToLine(x, y, x1, y1, x2, y2);
+            labelAnchor = { x: (x1 + x2) / 2, y: (y1 + y2) / 2 - 10 };
+        }
+
+        // Label box: text is drawn with its baseline at the anchor, so it sits just above it
+        const halfWidth = Math.max(24, symbols.length * 9 + 12) / 2;
+        const halfHeight = 11;
+        const centerX = labelAnchor.x;
+        const centerY = labelAnchor.y - 5;
+        const dx = Math.max(Math.abs(x - centerX) - halfWidth, 0);
+        const dy = Math.max(Math.abs(y - centerY) - halfHeight, 0);
+        const labelDistance = Math.hypot(dx, dy);
+
+        return Math.min(pathDistance, labelDistance);
+    }
+
+    private sampleCurve(start: Point, control: Point, end: Point, steps: number = 24): Point[] {
+        const points: Point[] = [];
+        for (let i = 0; i <= steps; i++) {
+            const t = i / steps;
+            const mt = 1 - t;
+            points.push({
+                x: mt * mt * start.x + 2 * mt * t * control.x + t * t * end.x,
+                y: mt * mt * start.y + 2 * mt * t * control.y + t * t * end.y
+            });
+        }
+        return points;
+    }
+
+    private distanceToPolyline(x: number, y: number, points: Point[]): number {
+        let min = Infinity;
+        for (let i = 0; i < points.length - 1; i++) {
+            min = Math.min(min, this.distanceToLine(x, y, points[i].x, points[i].y, points[i + 1].x, points[i + 1].y));
+        }
+        return min;
     }
 
     private distanceToLine(x: number, y: number, x1: number, y1: number, x2: number, y2: number): number {

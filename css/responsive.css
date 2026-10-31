@@ -1,0 +1,184 @@
+/* responsive.css — load AFTER style.css:
+   <link rel="stylesheet" href="./css/responsive.css">                              */
+
+/* 100vw includes the scrollbar width and causes sideways overflow */
+body {
+    width: 100%;
+}
+
+/* Tablet and below: the layout is already one column (style.css, max-width 1200px),
+   but the old min-widths (workspace 500px, inputs 200px) kept it wider than the screen. */
+@media (max-width: 1200px) {
+    .main-content > *,
+    .workspace,
+    .sidebar,
+    .panel {
+        min-width: 0;
+    }
+}
+
+/* Phones */
+@media (max-width: 768px) {
+    /* Header: slim, logo + title side by side */
+    header {
+        padding: 8px 14px;
+        gap: 10px;
+    }
+
+    header .logo {
+        width: 36px;
+        height: 36px;
+    }
+
+    header .brand {
+        min-width: 0;
+    }
+
+    header h1 {
+        font-size: 1.15rem;
+        margin: 0;
+    }
+
+    header .subtitle {
+        display: none;
+    }
+
+    /* Put the designer first; saved automata and help text come after it */
+    .workspace {
+        order: 1;
+    }
+
+    .sidebar {
+        order: 2;
+    }
+
+    /* Page spacing */
+    .main-content {
+        padding: 10px;
+        gap: 12px;
+        min-height: 0;
+    }
+
+    .sidebar {
+        padding: 10px;
+        min-height: 0;
+        max-height: none;
+        box-shadow: none;
+    }
+
+    .workspace {
+        padding-right: 0;
+        gap: 12px;
+        min-height: 0;
+    }
+
+    .workspace::after {
+        display: none;            /* the "Scroll for more" hint isn't needed on touch screens */
+    }
+
+    .panel {
+        padding: 14px;
+    }
+
+    .panel h2 {
+        font-size: 1.3rem;
+        margin-bottom: 12px;
+        padding-bottom: 10px;
+    }
+
+    /* Canvas area scrolls inside its own box instead of widening the page */
+    .canvas-container {
+        height: 320px;
+        min-height: 260px;
+        max-width: 100%;
+    }
+
+    /* Buttons: two per row, text centered and allowed to wrap */
+    .controls {
+        gap: 8px;
+        margin-top: 12px;
+    }
+
+    .controls button {
+        flex: 1 1 calc(50% - 8px);
+        justify-content: center;
+        text-align: center;
+        padding: 12px 10px;
+        font-size: 0.95rem;
+    }
+
+    .management-buttons {
+        flex-wrap: wrap;
+    }
+
+    .management-buttons button {
+        flex: 1 1 calc(50% - 8px);
+        justify-content: center;
+    }
+
+    /* Forms: input on its own line, buttons share the next line */
+    .test-section {
+        padding: 12px;
+        margin: 12px 0;
+    }
+
+    .input-group {
+        gap: 8px;
+    }
+
+    .input-group input[type="text"] {
+        flex: 1 1 100%;
+        min-width: 0;
+    }
+
+    .input-group button {
+        flex: 1 1 auto;
+        justify-content: center;
+        padding: 12px 10px;
+    }
+
+    .result {
+        font-size: 1rem;
+        padding: 12px;
+    }
+
+    .result:empty {
+        display: none;            /* no empty boxes before a test has been run */
+    }
+
+    .property-grid {
+        font-size: 1rem;
+        gap: 4px 12px;
+    }
+
+    /* Status bar: allow wrapping instead of overflowing */
+    .status-bar {
+        flex-wrap: wrap;
+        gap: 4px 12px;
+        padding: 8px 14px;
+        font-size: 0.9rem;
+    }
+
+    /* Transition editor dialog */
+    .modal-content {
+        padding: 18px;
+        width: 94%;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+
+    .scroll-top-btn {
+        width: 44px;
+        height: 44px;
+        bottom: 14px;
+        right: 14px;
+    }
+}
+
+/* Very small phones: one button per row */
+@media (max-width: 380px) {
+    .controls button,
+    .management-buttons button {
+        flex: 1 1 100%;
+    }
+}

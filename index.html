@@ -2,13 +2,18 @@
     <html lang="en">
     <head>
         <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.8, maximum-scale=1.0">
-        <title>Enhanced Finite Automata Designer</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>AutomataFlow</title>
         <link rel="stylesheet" href="./css/style.css">
+        <link rel="stylesheet" href="./css/responsive.css">
         <script type="module" src="./js/models.js" defer></script>
         <script type="module" src="./js/renderer.js" defer></script>
         <script type="module" src="./js/storage.js" defer></script>
         <script type="module" src="./js/main.js" defer></script>
+        <link rel="icon" href="./assets/favicon.ico" sizes="any">
+        <link rel="icon" type="image/png" sizes="32x32" href="./assets/favicon-32.png">
+        <link rel="icon" type="image/png" sizes="16x16" href="./assets/favicon-16.png">
+        <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png">
     </head>
     <body>
         <div class="export-notification" id="export-notification">
@@ -45,8 +50,11 @@
         
         <div class="container">
             <header>
-                <h1>Enhanced Finite Automata Designer</h1>
-                <p class="subtitle">Advanced visualization with bidirectional transitions and export</p>
+                <img src="./assets/logo-light.png" alt="Automata Designer logo" class="logo">
+                <div class="brand">
+                    <h1>AutomataFlow</h1>
+                    <p class="subtitle">Design, simulate and convert DFA &amp; NFA</p>
+                </div>
             </header>
 
             <div class="main-content">
@@ -91,6 +99,15 @@
                         <h2>Automata Designer</h2>
                         <div class="canvas-container">
                             <canvas id="automata-canvas" width="700" height="400"></canvas>
+                            <div id="transition-creator" class="transition-creator" style="display: none;">
+                                <div class="transition-creator-title">Transition symbols</div>
+                                <input id="transition-symbol-input" type="text" placeholder="e.g. a,b,ε">
+                                <div class="transition-creator-actions">
+                                    <button id="transition-symbol-epsilon" type="button">+ ε</button>
+                                    <button id="transition-symbol-cancel" type="button">Cancel</button>
+                                    <button id="transition-symbol-confirm" type="button">Add</button>
+                                </div>
+                            </div>
                         </div>
                         <div class="controls">
                             <button id="add-state">
@@ -213,6 +230,22 @@
                 <div class="modal-footer">
                     <button id="cancel-edit">Cancel</button>
                     <button id="save-transition">Save Changes</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="action-dialog" class="modal action-dialog">
+            <div class="modal-content action-dialog-content">
+                <div class="modal-header">
+                    <h3 id="action-dialog-title" class="modal-title">Confirm action</h3>
+                </div>
+                <div class="modal-body">
+                    <p id="action-dialog-message"></p>
+                    <input id="action-dialog-input" type="text" style="display: none;" autocomplete="off">
+                </div>
+                <div class="modal-footer">
+                    <button id="action-dialog-cancel" type="button">Cancel</button>
+                    <button id="action-dialog-confirm" type="button">Confirm</button>
                 </div>
             </div>
         </div>

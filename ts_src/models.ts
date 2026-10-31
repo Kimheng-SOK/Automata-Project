@@ -29,6 +29,8 @@ export class Transition {
     }
 }
 
+export const EPSILON = 'ε';
+
 export class FiniteAutomaton {
     states: State[];
     transitions: Transition[];
@@ -78,61 +80,86 @@ export class FiniteAutomaton {
         this.transitions = this.transitions.filter(
             trans => trans.from !== stateId && trans.to !== stateId
         );
+        this.rebuildAlphabet();
     }
 
     deleteTransition(from: number, to: number, symbol: string): void {
         this.transitions = this.transitions.filter(
             trans => !(trans.from === from && trans.to === to && trans.symbol === symbol)
         );
+        this.rebuildAlphabet();
+    }
+
+    // Keep the alphabet in sync with the transitions that actually exist
+    rebuildAlphabet(): void {
+        this.alphabet = new Set<string>(this.transitions.map(t => t.symbol));
+    }
+
+    hasEpsilonTransitions(): boolean {
+        return this.transitions.some(t => t.symbol === EPSILON);
+    }
+
+    // All states reachable from `stateIds` using only ε-transitions (including the inputs)
+    epsilonClosure(stateIds: Iterable<number>): Set<number> {
+        const closure = new Set<number>(stateIds);
+        const stack = Array.from(closure);
+        while (stack.length > 0) {
+            const id = stack.pop() as number;
+            for (const t of this.transitions) {
+                if (t.from === id && t.symbol === EPSILON && !closure.has(t.to)) {
+                    closure.add(t.to);
+                    stack.push(t.to);
+                }
+            }
+        }
+        return closure;
+    }
+
+    // Place states on a simple grid so generated automata are readable and stable
+    static layoutStates(fa: FiniteAutomaton): void {
+        const cols = Math.max(1, Math.ceil(Math.sqrt(fa.states.length)));
+        fa.states.forEach((state, i) => {
+            state.x = 80 + (i % cols) * 140;
+            state.y = 80 + Math.floor(i / cols) * 130;
+        });
     }
 
     isDeterministic(): boolean {
-        const stateTransitionMap = new Map<number, Map<string, number>>();
+        // ε-moves make an automaton non-deterministic
+        if (this.hasEpsilonTransitions()) return false;
 
-        for (const state of this.states) {
-            stateTransitionMap.set(state.id, new Map<string, number>());
+        // For each (state, symbol) there may be at most one distinct target.
+        // Duplicate identical edges are redundant, not non-deterministic.
+        const seen = new Map<string, number>();
+        for (const t of this.transitions) {
+            const key = `${t.from}\u0000${t.symbol}`;
+            const target = seen.get(key);
+            if (target !== undefined && target !== t.to) return false;
+            seen.set(key, t.to);
         }
-
-        for (const transition of this.transitions) {
-            const symbolMap = stateTransitionMap.get(transition.from);
-            if (symbolMap && symbolMap.has(transition.symbol)) {
-                return false;
-            }
-            symbolMap?.set(transition.symbol, transition.to);
-        }
-
         return true;
     }
 
+    // Works for DFAs and NFAs (with or without ε-transitions) by tracking the set of current states
     acceptsString(input: string): boolean {
-        if (!this.isDeterministic()) {
-            console.error("Automaton is not deterministic");
-            return false;
-        }
-
-        let currentStates = this.states.filter(state => state.isInitial);
-        if (currentStates.length !== 1) {
+        const initial = this.states.filter(state => state.isInitial);
+        if (initial.length !== 1) {
             console.error("No single initial state");
             return false;
         }
 
+        let current = this.epsilonClosure([initial[0].id]);
+
         for (const symbol of input) {
-            if (!this.alphabet.has(symbol)) {
-                return false;
+            const moved = new Set<number>();
+            for (const t of this.transitions) {
+                if (t.symbol === symbol && current.has(t.from)) moved.add(t.to);
             }
-
-            const nextStates = this.transitions
-                .filter(t => t.from === currentStates[0].id && t.symbol === symbol)
-                .map(t => this.states.find(s => s.id === t.to));
-
-            if (nextStates.length !== 1 || !nextStates[0]) {
-                return false;
-            }
-
-            currentStates = nextStates as State[];
+            current = this.epsilonClosure(moved);
+            if (current.size === 0) return false;
         }
 
-        return currentStates[0].isFinal;
+        return Array.from(current).some(id => this.getStateById(id)?.isFinal === true);
     }
 
     getStateById(id: number): State | undefined {
@@ -174,86 +201,49 @@ export class FiniteAutomaton {
             return nfa;
         }
 
-        const dfa = new FiniteAutomaton();
-        const stateMap = new Map<string, number>();
-
-        function epsilonClosure(states: number[]): Set<number> {
-            const closure = new Set<number>(states);
-            let changed = true;
-
-            while (changed) {
-                changed = false;
-                for (const stateId of closure) {
-                    nfa.transitions
-                        .filter(t => t.from === stateId && t.symbol === 'ε')
-                        .forEach(t => {
-                            if (!closure.has(t.to)) {
-                                closure.add(t.to);
-                                changed = true;
-                            }
-                        });
-                }
-            }
-            return closure;
-        }
-
         const initialState = nfa.states.find(s => s.isInitial);
         if (!initialState) throw new Error("NFA has no initial state");
 
-        const initialClosure = epsilonClosure([initialState.id]);
-        const initialStateKey = Array.from(initialClosure).sort().join(',');
+        const keyOf = (set: Set<number>) => Array.from(set).sort((a, b) => a - b).join(',');
+        const anyFinal = (set: Set<number>) =>
+            Array.from(set).some(id => nfa.getStateById(id)?.isFinal === true);
 
-        const dfaInitialState = dfa.addState(50, 50, true, 
-            Array.from(initialClosure).some(id => {
-                const state = nfa.getStateById(id);
-                return state ? state.isFinal : false;
-            }));
-        stateMap.set(initialStateKey, dfaInitialState.id);
+        const dfa = new FiniteAutomaton();
+        const stateMap = new Map<string, number>();
 
-        const unprocessedStates: Set<number>[] = [initialClosure];
+        const initialClosure = nfa.epsilonClosure([initialState.id]);
+        const dfaInitial = dfa.addState(0, 0, true, anyFinal(initialClosure));
+        stateMap.set(keyOf(initialClosure), dfaInitial.id);
 
-        while (unprocessedStates.length > 0) {
-            const currentNFAStates = unprocessedStates.pop();
-            if (!currentNFAStates) continue;
+        const unprocessed: Set<number>[] = [initialClosure];
 
-            const currentStateKey = Array.from(currentNFAStates).sort().join(',');
-            const currentDFAStateId = stateMap.get(currentStateKey);
-            if (currentDFAStateId === undefined) continue;
+        while (unprocessed.length > 0) {
+            const currentSet = unprocessed.pop() as Set<number>;
+            const currentDfaId = stateMap.get(keyOf(currentSet)) as number;
 
             for (const symbol of nfa.alphabet) {
-                if (symbol === 'ε') continue;
+                if (symbol === EPSILON) continue;
 
-                const moveResult = new Set<number>();
-                for (const stateId of currentNFAStates) {
-                    nfa.transitions
-                        .filter(t => t.from === stateId && t.symbol === symbol)
-                        .forEach(t => moveResult.add(t.to));
+                const moved = new Set<number>();
+                for (const t of nfa.transitions) {
+                    if (t.symbol === symbol && currentSet.has(t.from)) moved.add(t.to);
+                }
+                if (moved.size === 0) continue;
+
+                const target = nfa.epsilonClosure(moved);
+                const targetKey = keyOf(target);
+
+                if (!stateMap.has(targetKey)) {
+                    const created = dfa.addState(0, 0, false, anyFinal(target));
+                    stateMap.set(targetKey, created.id);
+                    unprocessed.push(target);
                 }
 
-                if (moveResult.size === 0) continue;
-
-                const newStateSet = epsilonClosure(Array.from(moveResult));
-                const newStateKey = Array.from(newStateSet).sort().join(',');
-
-                if (!stateMap.has(newStateKey)) {
-                    const isFinal = Array.from(newStateSet).some(id => {
-                        const state = nfa.getStateById(id);
-                        return state ? state.isFinal : false;
-                    });
-                    const newDFAState = dfa.addState(
-                        50 + Math.random() * 300, 
-                        50 + Math.random() * 200, 
-                        false, 
-                        isFinal
-                    );
-                    stateMap.set(newStateKey, newDFAState.id);
-                    unprocessedStates.push(newStateSet);
-                }
-
-                dfa.addTransition(currentDFAStateId, stateMap.get(newStateKey) as number, symbol);
+                dfa.addTransition(currentDfaId, stateMap.get(targetKey) as number, symbol);
             }
         }
 
+        FiniteAutomaton.layoutStates(dfa);
         return dfa;
     }
 
@@ -262,6 +252,8 @@ export class FiniteAutomaton {
             console.error("Automaton is not deterministic");
             return dfa;
         }
+
+        dfa = FiniteAutomaton.removeUnreachableStates(dfa);
 
         let partition: number[][] = [];
         const finalStates = new Set(dfa.states.filter(s => s.isFinal).map(s => s.id));
@@ -294,6 +286,36 @@ export class FiniteAutomaton {
         }
 
         return this.createMinimizedDFA(dfa, partition);
+    }
+
+    // Returns a copy of the automaton containing only states reachable from the initial state
+    static removeUnreachableStates(fa: FiniteAutomaton): FiniteAutomaton {
+        const initial = fa.states.find(s => s.isInitial);
+        if (!initial) return fa;
+
+        const reachable = new Set<number>([initial.id]);
+        const stack = [initial.id];
+        while (stack.length > 0) {
+            const id = stack.pop() as number;
+            for (const t of fa.transitions) {
+                if (t.from === id && !reachable.has(t.to)) {
+                    reachable.add(t.to);
+                    stack.push(t.to);
+                }
+            }
+        }
+        if (reachable.size === fa.states.length) return fa;
+
+        const pruned = new FiniteAutomaton();
+        pruned.states = fa.states
+            .filter(s => reachable.has(s.id))
+            .map(s => new State(s.id, s.x, s.y, s.isInitial, s.isFinal));
+        pruned.transitions = fa.transitions
+            .filter(t => reachable.has(t.from) && reachable.has(t.to))
+            .map(t => new Transition(t.from, t.to, t.symbol));
+        pruned.currentStateId = fa.currentStateId;
+        pruned.rebuildAlphabet();
+        return pruned;
     }
 
     static splitPartitionGroup(dfa: FiniteAutomaton, group: number[], partition: number[][]): number[][] {
@@ -345,12 +367,14 @@ export class FiniteAutomaton {
                 return state ? state.isFinal : false;
             });
             newStates[groupIndex] = minimized.addState(
-                50 + groupIndex * 100,
-                50 + (groupIndex % 2) * 150,
+                0,
+                0,
                 isInitial,
                 isFinal
             );
         });
+
+        FiniteAutomaton.layoutStates(minimized);
 
         const addedTransitions = new Set<string>();
         partition.forEach((group, groupIndex) => {
@@ -375,141 +399,72 @@ export class FiniteAutomaton {
         return minimized;
     }
 
+    // State elimination on a generalized NFA (new start/accept states, regex labels on edges).
+    // Precedence: 0 = union, 1 = concatenation, 2 = atom or starred expression.
     static convertToRegex(automaton: FiniteAutomaton): string {
-        // Make a copy of the automaton to work with
-        const dfa = new FiniteAutomaton();
-        const stateMap = new Map<number, number>();
+        type Re = { s: string; p: number };
+        const eps: Re = { s: EPSILON, p: 2 };
+        const wrap = (r: Re, minPrec: number) => (r.p < minPrec ? `(${r.s})` : r.s);
 
-        // Copy states
-        automaton.states.forEach(state => {
-            const newState = dfa.addState(state.x, state.y, state.isInitial, state.isFinal);
-            stateMap.set(state.id, newState.id);
-        });
+        const union = (a: Re | undefined, b: Re | undefined): Re | undefined => {
+            if (!a) return b;
+            if (!b) return a;
+            if (a.s === b.s) return a;
+            return { s: `${a.s}|${b.s}`, p: 0 };
+        };
+        const concat = (a: Re | undefined, b: Re | undefined): Re | undefined => {
+            if (!a || !b) return undefined;
+            if (a.s === EPSILON) return b;
+            if (b.s === EPSILON) return a;
+            return { s: `${wrap(a, 1)}${wrap(b, 1)}`, p: 1 };
+        };
+        const star = (a: Re | undefined): Re => {
+            if (!a || a.s === EPSILON) return eps;
+            if (a.s.endsWith('*') && a.p === 2) return a;
+            return { s: `${wrap(a, 2)}*`, p: 2 };
+        };
 
-        // Copy transitions
-        automaton.transitions.forEach(transition => {
-            const fromId = stateMap.get(transition.from);
-            const toId = stateMap.get(transition.to);
-            if (fromId !== undefined && toId !== undefined) {
-                dfa.addTransition(fromId, toId, transition.symbol);
-            }
-        });
+        const START = -1;
+        const ACCEPT = -2;
+        const edges = new Map<string, Re>();
+        const key = (i: number, j: number) => `${i}>${j}`;
+        const addEdge = (i: number, j: number, r: Re) => {
+            edges.set(key(i, j), union(edges.get(key(i, j)), r) as Re);
+        };
 
-        // Add a new start state if needed
-        let startState = dfa.states.findIndex(s => s.isInitial);
-        if (startState === -1) {
-            // No initial state, so create one
-            const newStart = dfa.addState(0, 0, true, false);
-            startState = dfa.states.length - 1;
-        }
+        const initial = automaton.states.find(s => s.isInitial);
+        if (!initial) return '∅';
 
-        // Add a new single accepting state if needed
-        const finalStates = dfa.states.filter(s => s.isFinal);
-        let acceptState;
+        addEdge(START, initial.id, eps);
+        automaton.states.filter(s => s.isFinal).forEach(s => addEdge(s.id, ACCEPT, eps));
+        automaton.transitions.forEach(t => addEdge(t.from, t.to, { s: t.symbol, p: 2 }));
 
-        if (finalStates.length === 0) {
-            // No final states, so create one
-            acceptState = dfa.addState(100, 100, false, true).id;
-        } else if (finalStates.length === 1) {
-            // Just one final state
-            acceptState = finalStates[0].id;
-        } else {
-            // Multiple final states, create a new single final state
-            acceptState = dfa.addState(100, 100, false, true).id;
+        let remaining = automaton.states.map(s => s.id);
 
-            // Add epsilon transitions from all original final states to the new final state
-            finalStates.forEach(state => {
-                if (state.id !== acceptState) {
-                    dfa.addTransition(state.id, acceptState, 'ε');
-                    state.isFinal = false; // No longer a final state
-                }
-            });
-        }
+        for (const k of automaton.states.map(s => s.id)) {
+            const loop = star(edges.get(key(k, k)));
+            const others = [START, ACCEPT, ...remaining.filter(id => id !== k)];
 
-        // State elimination algorithm
-        const elimOrder = dfa.states
-            .filter(s => !s.isInitial && s.id !== acceptState)
-            .map(s => s.id);
-
-        // For each state to eliminate
-        for (const stateId of elimOrder) {
-            // Find all transitions to this state
-            const incomingTransitions = dfa.transitions.filter(t => t.to === stateId);
-
-            // Find all transitions from this state
-            const outgoingTransitions = dfa.transitions.filter(t => t.from === stateId);
-
-            // Find self-loops (for Kleene star)
-            const selfLoops = dfa.transitions.filter(t => t.from === stateId && t.to === stateId);
-            const selfLoopRegex = selfLoops.length > 0 ? 
-                `(${selfLoops.map(t => t.symbol).join('|')})* ` : 
-                '';
-
-            // For each incoming-outgoing pair, create a new transition
-            for (const incoming of incomingTransitions) {
-                if (incoming.from === stateId) continue; // Skip self-loops
-
-                for (const outgoing of outgoingTransitions) {
-                    if (outgoing.to === stateId) continue; // Skip self-loops
-
-                    // Create a new compound transition
-                    const newRegex = `${incoming.symbol}${selfLoopRegex}${outgoing.symbol}`;
-
-                    // Check if there's already a transition between these states
-                    const existingTransition = dfa.transitions.find(
-                        t => t.from === incoming.from && t.to === outgoing.to
-                    );
-
-                    if (existingTransition) {
-                        // Update the existing transition with OR
-                        existingTransition.symbol = `(${existingTransition.symbol}|${newRegex})`;
-                    } else {
-                        // Create a new transition
-                        dfa.addTransition(incoming.from, outgoing.to, newRegex);
-                    }
+            for (const i of others) {
+                const incoming = edges.get(key(i, k));
+                if (!incoming) continue;
+                for (const j of others) {
+                    const outgoing = edges.get(key(k, j));
+                    if (!outgoing) continue;
+                    const through = concat(concat(incoming, loop), outgoing);
+                    if (through) addEdge(i, j, through);
                 }
             }
 
-            // Remove all transitions to/from the eliminated state
-            dfa.transitions = dfa.transitions.filter(
-                t => t.from !== stateId && t.to !== stateId
-            );
+            // Drop every edge touching the eliminated state
+            for (const e of Array.from(edges.keys())) {
+                const [a, b] = e.split('>').map(Number);
+                if (a === k || b === k) edges.delete(e);
+            }
+            remaining = remaining.filter(id => id !== k);
         }
 
-        // Get the remaining transitions from start to accept
-        const remainingTransitions = dfa.transitions.filter(
-            t => dfa.states[startState] && 
-                 t.from === dfa.states[startState].id && 
-                 t.to === acceptState
-        );
-
-        if (remainingTransitions.length === 0) {
-            return '∅'; // Empty language
-        }
-
-        // Combine all remaining transitions with OR
-        const regex = remainingTransitions.map(t => t.symbol).join('|');
-
-        // Simplify the regex if possible
-        return this.simplifyRegex(regex);
-    }
-
-    static simplifyRegex(regex: string): string {
-        // Basic simplifications
-        let simplified = regex;
-
-        // Remove unnecessary parentheses
-        simplified = simplified.replace(/\(([^|()]+)\)/g, '$1');
-
-        // Simplify a|a to a
-        const pattern = /\(([^()]+)\|\1\)/g;
-        while (pattern.test(simplified)) {
-            simplified = simplified.replace(pattern, '$1');
-        }
-
-        // Simplify (a)* to a*
-        simplified = simplified.replace(/\(([^|()]+)\)\*/g, '$1*');
-
-        return simplified;
+        const result = edges.get(key(START, ACCEPT));
+        return result ? result.s : '∅';
     }
 }

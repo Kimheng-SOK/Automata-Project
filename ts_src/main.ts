@@ -3,6 +3,7 @@ import { AutomataStorage } from './storage.js';
 import { AutomataRenderer } from './renderer.js';
 
 document.addEventListener('DOMContentLoaded', function() {
+    type PendingTransition = { from: number; to: number };
     // Get canvas and create objects
     const canvas = document.getElementById('automata-canvas') as HTMLCanvasElement;
     if (!canvas) throw new Error('Canvas element not found');
@@ -17,6 +18,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let dragState: number | null = null;
     let dragOffsetX = 0;
     let dragOffsetY = 0;
+    let pendingTransition: PendingTransition | null = null;
 
     // UI Elements
     const testStringInput = document.getElementById('test-string') as HTMLInputElement;
@@ -29,6 +31,18 @@ document.addEventListener('DOMContentLoaded', function() {
     const stateCount = document.getElementById('state-count') as HTMLSpanElement;
     const transitionCount = document.getElementById('transition-count') as HTMLSpanElement;
     const exportNotification = document.getElementById('export-notification') as HTMLDivElement;
+    const transitionCreator = document.getElementById('transition-creator') as HTMLDivElement;
+    const transitionCreatorInput = document.getElementById('transition-symbol-input') as HTMLInputElement;
+    const transitionCreatorConfirm = document.getElementById('transition-symbol-confirm') as HTMLButtonElement;
+    const transitionCreatorCancel = document.getElementById('transition-symbol-cancel') as HTMLButtonElement;
+    const transitionCreatorEpsilon = document.getElementById('transition-symbol-epsilon') as HTMLButtonElement;
+    const actionDialog = document.getElementById('action-dialog') as HTMLDivElement;
+    const actionDialogTitle = document.getElementById('action-dialog-title') as HTMLHeadingElement;
+    const actionDialogMessage = document.getElementById('action-dialog-message') as HTMLParagraphElement;
+    const actionDialogInput = document.getElementById('action-dialog-input') as HTMLInputElement;
+    const actionDialogCancel = document.getElementById('action-dialog-cancel') as HTMLButtonElement;
+    const actionDialogConfirm = document.getElementById('action-dialog-confirm') as HTMLButtonElement;
+    let actionDialogConfirmHandler: (() => void) | null = null;
 
     // Transition Editor Modal Elements
     const modal = document.getElementById('transition-modal') as HTMLDivElement;
@@ -75,6 +89,8 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('add-transition')?.addEventListener('click', function() {
         isAddingTransition = !isAddingTransition;
         transitionStartState = null;
+        pendingTransition = null;
+        closeTransitionCreator();
         this.classList.toggle('active', isAddingTransition);
         renderer.render();
         updateStatus(isAddingTransition ? "Select first state for transition" : "Transition mode canceled");
@@ -107,13 +123,13 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('delete-element')?.addEventListener('click', function() {
         const selectedState = renderer.getSelectedState();
         if (selectedState !== null) {
-            if (confirm('Delete this state and all its transitions?')) {
+            showConfirmDialog('Delete this state and all its transitions?', () => {
                 currentAutomata.deleteState(selectedState);
                 renderer.setSelectedState(null);
                 renderer.render();
                 updateProperties();
                 updateStatus("State deleted");
-            }
+            });
         } else {
             updateStatus("Select a state to delete");
         }
@@ -162,8 +178,7 @@ document.addEventListener('DOMContentLoaded', function() {
             updateStatus("NFA converted to DFA");
         } catch (e) {
             console.error('Conversion error:', e);
-            alert(`Conversion failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
-            updateStatus("Conversion error");
+            updateStatus(`Conversion failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
         }
     });
 
@@ -176,8 +191,7 @@ document.addEventListener('DOMContentLoaded', function() {
             updateStatus("DFA minimized");
         } catch (e) {
             console.error('Minimization error:', e);
-            alert(`Minimization failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
-            updateStatus("Minimization error");
+            updateStatus(`Minimization failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
         }
     });
 
@@ -187,7 +201,7 @@ document.addEventListener('DOMContentLoaded', function() {
             currentAutomata.regex = regex;
             const regexResultDiv = document.getElementById('regex-result');
             if (regexResultDiv) {
-                regexResultDiv.innerHTML = `<div class="regex-title">Regular Expression:</div><div class="regex-value">${regex}</div>`;
+                showRegexResult(regexResultDiv, 'Regular Expression:', regex);
                 regexResultDiv.className = 'success result';
             }
             updateProperties();
@@ -196,7 +210,7 @@ document.addEventListener('DOMContentLoaded', function() {
             console.error('Regex conversion error:', e);
             const regexResultDiv = document.getElementById('regex-result');
             if (regexResultDiv) {
-                regexResultDiv.innerHTML = `<div class="regex-title">Conversion failed:</div><div class="regex-value">${e instanceof Error ? e.message : 'Unknown error'}</div>`;
+                showRegexResult(regexResultDiv, 'Conversion failed:', e instanceof Error ? e.message : 'Unknown error');
                 regexResultDiv.className = 'error result';
             }
             updateStatus("Regex conversion error");
@@ -225,15 +239,12 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     document.getElementById('export-automata')?.addEventListener('click', function() {
-        const name = prompt("Enter a name for this automata:");
-        if (name) {
-            const exportData = AutomataStorage.exportAutomata(name) || 
-                            JSON.stringify(currentAutomata.toJSON(), null, 2);
+        showTextInputDialog('Export automata', 'Enter a name for this automata:', '', (name) => {
+            const exportData = AutomataStorage.exportAutomata(name) ||
+                JSON.stringify(currentAutomata.toJSON(), null, 2);
 
-            // Save in localStorage
             AutomataStorage.saveAutomata(name, currentAutomata);
 
-            // Download as file
             const blob = new Blob([exportData], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -242,13 +253,11 @@ document.addEventListener('DOMContentLoaded', function() {
             document.body.appendChild(a);
             a.click();
 
-            // Cleanup
             setTimeout(() => {
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
             }, 100);
 
-            // Show notification
             if (exportNotification) {
                 exportNotification.textContent = `Automata exported to ${a.download}`;
                 exportNotification.style.display = 'block';
@@ -258,7 +267,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             updateStatus(`Automata exported as "${a.download}"`);
-        }
+        });
     });
 
     document.getElementById('import-automata')?.addEventListener('click', function() {
@@ -275,28 +284,25 @@ document.addEventListener('DOMContentLoaded', function() {
         reader.onload = function(event) {
             if (!event.target?.result) return;
 
-            const name = prompt("Enter a name for the imported automata:");
-            if (name) {
-                if (AutomataStorage.importAutomata(name, event.target.result as string)) {
+            showTextInputDialog('Import automata', 'Enter a name for the imported automata:', '', (name) => {
+                if (AutomataStorage.importAutomata(name, event.target!.result as string)) {
                     updateSavedAutomataList();
-                    alert("Automata imported successfully!");
                     updateStatus(`Automata "${name}" imported`);
                 } else {
-                    alert("Failed to import automata. Invalid format.");
-                    updateStatus("Import failed");
+                    updateStatus('Import failed: invalid format');
                 }
-            }
+            });
         };
         reader.readAsText(file);
         target.value = '';
     });
 
     document.getElementById('delete-all-automata')?.addEventListener('click', function() {
-        if (confirm("Are you sure you want to delete ALL saved automata? This cannot be undone.")) {
+        showConfirmDialog('Delete all saved automata? This cannot be undone.', () => {
             AutomataStorage.deleteAllAutomata();
             updateSavedAutomataList();
             updateStatus("All automata deleted");
-        }
+        });
     });
 
     // Modal event listeners
@@ -307,20 +313,72 @@ document.addEventListener('DOMContentLoaded', function() {
     addSymbolBtn?.addEventListener('click', function() {
         const symbol = newSymbolInput.value.trim();
         if (symbol) {
-            if (!currentEditSymbols.includes(symbol)) {
-                currentEditSymbols.push(symbol);
-                renderSymbolList();
-                newSymbolInput.value = '';
-                newSymbolInput.focus();
+            const parsedSymbols = parseSymbolInput(symbol);
+            if (parsedSymbols.invalidSymbols.length > 0) {
+                updateStatus(`Invalid symbol "${parsedSymbols.invalidSymbols[0]}": symbols must be one character or ε`);
+                return;
             }
+
+            const nextSymbol = parsedSymbols.symbols[0];
+            if (!nextSymbol) {
+                updateStatus('Enter at least one symbol');
+                return;
+            }
+
+            if (!currentEditSymbols.includes(nextSymbol)) {
+                currentEditSymbols.push(nextSymbol);
+                renderSymbolList();
+            }
+
+            newSymbolInput.value = '';
+            newSymbolInput.focus();
         }
     });
 
     addEpsilonBtn?.addEventListener('click', function() {
-        const epsilon = 'ε';
-        if (!currentEditSymbols.includes(epsilon)) {
-            currentEditSymbols.push(epsilon);
-            renderSymbolList();
+        addEpsilonToEditSymbols();
+    });
+
+    transitionCreatorConfirm?.addEventListener('click', savePendingTransition);
+    transitionCreatorCancel?.addEventListener('click', function() {
+        closeTransitionCreator();
+        endTransitionMode('Transition canceled');
+    });
+    transitionCreatorEpsilon?.addEventListener('click', appendEpsilonToTransitionInput);
+    transitionCreatorInput?.addEventListener('keydown', function(event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            savePendingTransition();
+            return;
+        }
+
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            closeTransitionCreator();
+            endTransitionMode('Transition canceled');
+            return;
+        }
+
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'e') {
+            event.preventDefault();
+            appendEpsilonToTransitionInput();
+        }
+    });
+
+    actionDialogCancel?.addEventListener('click', closeActionDialog);
+    actionDialogConfirm?.addEventListener('click', function() {
+        actionDialogConfirmHandler?.();
+    });
+    actionDialogInput?.addEventListener('keydown', function(event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            actionDialogConfirmHandler?.();
+            return;
+        }
+
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            closeActionDialog();
         }
     });
 
@@ -336,18 +394,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (transitionStartState === null) {
                     transitionStartState = clickedState.id;
                     updateStatus("Now select target state");
-                } else if (transitionStartState !== clickedState.id || clickedState.id === transitionStartState) {
-                    const symbol = prompt('Enter transition symbol:');
-                    if (symbol !== null) {
-                        currentAutomata.addTransition(transitionStartState, clickedState.id, symbol);
-                        isAddingTransition = false;
-                        const addTransitionBtn = document.getElementById('add-transition');
-                        addTransitionBtn?.classList.remove('active');
-                        transitionStartState = null;
-                        renderer.render();
-                        updateProperties();
-                        updateStatus("Transition added");
-                    }
+                } else {
+                    pendingTransition = {
+                        from: transitionStartState,
+                        to: clickedState.id
+                    };
+                    openTransitionCreator(pos.x, pos.y);
                 }
             }
         } else if (clickedState) {
@@ -376,6 +428,13 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
+        // Pointer cursor when hovering something clickable (a transition that is not under a state)
+        if (!isDragging && !isAddingTransition) {
+            const overTransition = renderer.findTransitionAtPosition(pos.x, pos.y) !== null;
+            const overState = renderer.findStateAtPosition(pos.x, pos.y) !== null;
+            canvas.style.cursor = overTransition && !overState ? 'pointer' : '';
+        }
+
         // Show transition preview
         if (isAddingTransition && transitionStartState !== null) {
             renderer.render();
@@ -387,6 +446,11 @@ document.addEventListener('DOMContentLoaded', function() {
         isDragging = false;
         dragState = null;
     });
+
+    // Resizing a canvas clears it, so draw again afterwards
+    window.addEventListener('load', () => renderer.render());
+    window.addEventListener('resize', () => setTimeout(() => renderer.render(), 150));
+    window.addEventListener('orientationchange', () => setTimeout(() => renderer.render(), 300));
 
     canvas.addEventListener('mouseleave', function() {
         isDragging = false;
@@ -411,34 +475,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const clickedState = renderer.findStateAtPosition(pos.x, pos.y);
 
         if (clickedState) {
-            // If a state is double-clicked, show the transition editor for all transitions from this state
-            // First check if there are any transitions from this state
-            const stateTransitions = currentAutomata.transitions.filter(t => t.from === clickedState.id);
-
-            if (stateTransitions.length > 0) {
-                // Open transition editor with the first transition
-                openTransitionEditor(stateTransitions[0]);
-                updateStatus("Editing transitions from state q" + clickedState.id);
-            } else {
-                // If no transitions exist, prompt to add one
-                const targetState = prompt('Enter target state ID for new transition:');
-                const symbol = prompt('Enter transition symbol:');
-
-                if (targetState !== null && symbol !== null) {
-                    const targetId = parseInt(targetState);
-                    if (!isNaN(targetId) && currentAutomata.getStateById(targetId)) {
-                        const newTransition = currentAutomata.addTransition(clickedState.id, targetId, symbol);
-                        if (newTransition) {
-                            renderer.render();
-                            updateProperties();
-                            openTransitionEditor(newTransition);
-                            updateStatus("New transition added and opened for editing");
-                        }
-                    } else {
-                        updateStatus("Invalid target state ID");
-                    }
-                }
-            }
+            beginTransitionSelection(clickedState.id, true);
             return;
         }
 
@@ -446,7 +483,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const clickedTransition = renderer.findTransitionAtPosition(pos.x, pos.y);
 
         if (clickedTransition) {
-            if (confirm(`Delete transition with symbol '${clickedTransition.symbol}'?`)) {
+            showConfirmDialog(`Delete transition with symbol '${clickedTransition.symbol}'?`, () => {
                 currentAutomata.deleteTransition(
                     clickedTransition.from, 
                     clickedTransition.to, 
@@ -455,7 +492,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 renderer.render();
                 updateProperties();
                 updateStatus("Transition deleted");
-            }
+            });
         }
     });
 
@@ -506,11 +543,11 @@ document.addEventListener('DOMContentLoaded', function() {
             deleteBtn.className = 'delete-btn';
             deleteBtn.addEventListener('click', function(e) {
                 e.stopPropagation();
-                if (confirm(`Delete automata "${name}"?`)) {
+                showConfirmDialog(`Delete automata "${name}"?`, () => {
                     AutomataStorage.deleteAutomata(name);
                     updateSavedAutomataList();
                     updateStatus(`Deleted automata: "${name}"`);
-                }
+                });
             });
 
             li.appendChild(deleteBtn);
@@ -520,6 +557,200 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function updateStatus(message: string): void {
         if (statusMessage) statusMessage.textContent = message;
+    }
+
+    function beginTransitionSelection(startStateId: number, fromDoubleClick = false): void {
+        isAddingTransition = true;
+        transitionStartState = startStateId;
+        pendingTransition = null;
+        closeTransitionCreator();
+        const addTransitionBtn = document.getElementById('add-transition');
+        addTransitionBtn?.classList.add('active');
+        renderer.render();
+        updateStatus(
+            fromDoubleClick
+                ? `Transition start set to q${startStateId}. Click target state.`
+                : 'Now select target state'
+        );
+    }
+
+    function endTransitionMode(message?: string): void {
+        isAddingTransition = false;
+        transitionStartState = null;
+        pendingTransition = null;
+        const addTransitionBtn = document.getElementById('add-transition');
+        addTransitionBtn?.classList.remove('active');
+        renderer.render();
+        if (message) updateStatus(message);
+    }
+
+    function openTransitionCreator(canvasX: number, canvasY: number): void {
+        if (!transitionCreator || !transitionCreatorInput || !pendingTransition) return;
+
+        const maxLeft = Math.max(canvas.width - 240, 16);
+        const maxTop = Math.max(canvas.height - 120, 16);
+        const left = Math.min(Math.max(canvasX + 12, 16), maxLeft);
+        const top = Math.min(Math.max(canvasY + 12, 16), maxTop);
+
+        transitionCreator.style.left = `${left}px`;
+        transitionCreator.style.top = `${top}px`;
+        transitionCreator.style.display = 'block';
+        transitionCreatorInput.value = '';
+        transitionCreatorInput.focus();
+        updateStatus(`Enter symbol(s) for q${pendingTransition.from} → q${pendingTransition.to}`);
+    }
+
+    function closeTransitionCreator(): void {
+        if (!transitionCreator) return;
+        transitionCreator.style.display = 'none';
+    }
+
+    function appendEpsilonToTransitionInput(): void {
+        if (!transitionCreatorInput) return;
+        const value = transitionCreatorInput.value.trim();
+        transitionCreatorInput.value = value.length === 0 ? 'ε' : `${value},ε`;
+        transitionCreatorInput.focus();
+    }
+
+    function addEpsilonToEditSymbols(): void {
+        const epsilon = 'ε';
+        if (!currentEditSymbols.includes(epsilon)) {
+            currentEditSymbols.push(epsilon);
+            renderSymbolList();
+        }
+    }
+
+    function parseSymbolInput(raw: string): { symbols: string[]; invalidSymbols: string[] } {
+        const entries = raw
+            .split(',')
+            .map(part => part.trim())
+            .filter(part => part.length > 0);
+        const symbols: string[] = [];
+        const invalidSymbols: string[] = [];
+
+        entries.forEach(entry => {
+            const isValid = entry === 'ε' || entry.length === 1;
+            if (!isValid) {
+                invalidSymbols.push(entry);
+                return;
+            }
+
+            if (!symbols.includes(entry)) {
+                symbols.push(entry);
+            }
+        });
+
+        return { symbols, invalidSymbols };
+    }
+
+    function transitionExists(from: number, to: number, symbol: string): boolean {
+        return currentAutomata.transitions.some(
+            transition => transition.from === from && transition.to === to && transition.symbol === symbol
+        );
+    }
+
+    function addValidatedTransitions(from: number, to: number, symbols: string[]): { added: number; skipped: number } {
+        let added = 0;
+        let skipped = 0;
+
+        symbols.forEach(symbol => {
+            if (transitionExists(from, to, symbol)) {
+                skipped += 1;
+                return;
+            }
+
+            const created = currentAutomata.addTransition(from, to, symbol);
+            if (created) {
+                added += 1;
+            }
+        });
+
+        return { added, skipped };
+    }
+
+    function savePendingTransition(): void {
+        if (!pendingTransition || !transitionCreatorInput) return;
+
+        const parsedSymbols = parseSymbolInput(transitionCreatorInput.value);
+        if (parsedSymbols.invalidSymbols.length > 0) {
+            updateStatus(
+                `Invalid symbol "${parsedSymbols.invalidSymbols[0]}": symbols must be one character or ε`
+            );
+            return;
+        }
+
+        if (parsedSymbols.symbols.length === 0) {
+            updateStatus('Enter at least one symbol');
+            return;
+        }
+
+        const result = addValidatedTransitions(pendingTransition.from, pendingTransition.to, parsedSymbols.symbols);
+        renderer.render();
+        updateProperties();
+        closeTransitionCreator();
+
+        if (result.added === 0) {
+            endTransitionMode('No transitions added (all duplicates).');
+            return;
+        }
+
+        const duplicateSuffix = result.skipped > 0 ? ` (${result.skipped} duplicate skipped)` : '';
+        endTransitionMode(`Transition${result.added > 1 ? 's' : ''} added${duplicateSuffix}`);
+    }
+
+    function closeActionDialog(): void {
+        if (!actionDialog || !actionDialogInput) return;
+        actionDialog.style.display = 'none';
+        actionDialogConfirmHandler = null;
+        actionDialogInput.value = '';
+    }
+
+    function showConfirmDialog(message: string, onConfirm: () => void): void {
+        if (!actionDialog || !actionDialogTitle || !actionDialogMessage || !actionDialogInput || !actionDialogConfirm) {
+            return;
+        }
+
+        actionDialogTitle.textContent = 'Confirm action';
+        actionDialogMessage.textContent = message;
+        actionDialogInput.style.display = 'none';
+        actionDialogConfirm.textContent = 'Confirm';
+        actionDialogConfirmHandler = () => {
+            closeActionDialog();
+            onConfirm();
+        };
+        actionDialog.style.display = 'flex';
+        actionDialogConfirm.focus();
+    }
+
+    function showTextInputDialog(
+        title: string,
+        message: string,
+        initialValue: string,
+        onConfirm: (value: string) => void
+    ): void {
+        if (!actionDialog || !actionDialogTitle || !actionDialogMessage || !actionDialogInput || !actionDialogConfirm) {
+            return;
+        }
+
+        actionDialogTitle.textContent = title;
+        actionDialogMessage.textContent = message;
+        actionDialogInput.style.display = 'block';
+        actionDialogInput.value = initialValue;
+        actionDialogConfirm.textContent = 'Save';
+        actionDialogConfirmHandler = () => {
+            const value = actionDialogInput.value.trim();
+            if (!value) {
+                updateStatus('A name is required');
+                actionDialogInput.focus();
+                return;
+            }
+
+            closeActionDialog();
+            onConfirm(value);
+        };
+        actionDialog.style.display = 'flex';
+        actionDialogInput.focus();
+        actionDialogInput.select();
     }
 
     function openTransitionEditor(transition: { from: number; to: number; symbol: string }): void {
@@ -552,21 +783,20 @@ document.addEventListener('DOMContentLoaded', function() {
         currentEditSymbols.forEach(symbol => {
             const symbolItem = document.createElement('div');
             symbolItem.className = 'symbol-item';
-            symbolItem.innerHTML = `
-                <span>${symbol}</span>
-                <span class="delete-symbol">×</span>
-            `;
+            const symbolText = document.createElement('span');
+            symbolText.textContent = symbol;
+            const deleteBtn = document.createElement('span');
+            deleteBtn.className = 'delete-symbol';
+            deleteBtn.textContent = '×';
+            deleteBtn.addEventListener('click', function() {
+                const index = currentEditSymbols.indexOf(symbol);
+                if (index !== -1) {
+                    currentEditSymbols.splice(index, 1);
+                    renderSymbolList();
+                }
+            });
 
-            const deleteBtn = symbolItem.querySelector('.delete-symbol');
-            if (deleteBtn) {
-                deleteBtn.addEventListener('click', function() {
-                    const index = currentEditSymbols.indexOf(symbol);
-                    if (index !== -1) {
-                        currentEditSymbols.splice(index, 1);
-                        renderSymbolList();
-                    }
-                });
-            }
+            symbolItem.append(symbolText, deleteBtn);
 
             symbolList.appendChild(symbolItem);
         });
@@ -599,3 +829,15 @@ document.addEventListener('DOMContentLoaded', function() {
         closeModal();
     }
 });
+
+// Builds the result with textContent so user-controlled symbols can never inject HTML
+function showRegexResult(container: HTMLElement, title: string, value: string): void {
+    container.textContent = '';
+    const titleDiv = document.createElement('div');
+    titleDiv.className = 'regex-title';
+    titleDiv.textContent = title;
+    const valueDiv = document.createElement('div');
+    valueDiv.className = 'regex-value';
+    valueDiv.textContent = value;
+    container.append(titleDiv, valueDiv);
+}
