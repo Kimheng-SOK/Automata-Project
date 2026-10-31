@@ -412,6 +412,10 @@ document.addEventListener('DOMContentLoaded', function () {
         isDragging = false;
         dragState = null;
     });
+    // Resizing a canvas clears it, so draw again afterwards
+    window.addEventListener('load', () => renderer.render());
+    window.addEventListener('resize', () => setTimeout(() => renderer.render(), 150));
+    window.addEventListener('orientationchange', () => setTimeout(() => renderer.render(), 300));
     canvas.addEventListener('mouseleave', function () {
         isDragging = false;
         dragState = null;
